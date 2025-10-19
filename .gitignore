@@ -41,9 +41,17 @@ Plugins/*/Intermediate/
 Plugins/*/Binaries/
 Plugins/*/Saved/
 
-
-DerivedDataCache/
 Engine/DerivedDataCache/
+
+Content/Developers/
+Content/Collections/
+Content/__ExternalActors__/
+Content/__ExternalObjects__/
+Content/StarterContent/
+Content/FXVarietyPack/
+*.autosave
+*.backup
+*.old
 
 
 Saved/Autosaves/
