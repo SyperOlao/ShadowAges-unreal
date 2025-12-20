@@ -50,10 +50,8 @@ Content/ParagonSevarog/
 *.backup
 *.old
 
-Content/__ExternalActors__/**/*.*autosave
-Content/__ExternalObjects__/**/*.*autosave
-Content/__ExternalActors__/**/*.*backup
-Content/__ExternalObjects__/**/*.*backup
+Content/__ExternalActors__/
+Content/__ExternalObjects__/
 
 Content/Dismemberment/
 
