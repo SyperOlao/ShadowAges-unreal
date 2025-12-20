@@ -1,0 +1,42 @@
+{
+	"FileVersion": 3,
+	"Version": 3,
+	"VersionName": "3.0.0",
+	"FriendlyName": "Narrative 3",
+	"Description": "A framework for creating epic worlds with lots of Quests and Dialogue.",
+	"Category": "Quests & Dialogue",
+	"CreatedBy": "Reubs",
+	"CreatedByURL": "narrativetools.io",
+	"DocsURL": "https://docs.google.com/document/d/1ORhO0qG_x9TwCLlMs49UxxzfpWx1v3HMn-43w_msPmA/edit?usp=sharing",
+	"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/b03174e0a1cc4de4b17dcfb2a0ba6884",
+	"SupportURL": "mailto:contact@reubs.io",
+	"EngineVersion": "5.6.0",
+	"CanContainContent": true,
+	"Installed": true,
+	"Modules": [
+		{
+			"Name": "Narrative",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64"
+			]
+		},
+		{
+			"Name": "NarrativeQuestEditor",
+			"Type": "UncookedOnly",
+			"LoadingPhase": "PreDefault",
+			"PlatformAllowList": [
+				"Win64"
+			]
+		},
+		{
+			"Name": "NarrativeDialogueEditor",
+			"Type": "UncookedOnly",
+			"LoadingPhase": "PreDefault",
+			"PlatformAllowList": [
+				"Win64"
+			]
+		}
+	]
+}
