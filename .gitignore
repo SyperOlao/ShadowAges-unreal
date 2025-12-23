@@ -2,6 +2,8 @@ Binaries/
 .vs/
 .vscode/
 Build/
+Windows/
+
 *.suo
 *.user
 *.userprefs
