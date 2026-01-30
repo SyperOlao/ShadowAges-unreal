@@ -28,6 +28,18 @@
 		{
 			"Name": "Water",
 			"Enabled": true
+		},
+		{
+			"Name": "CommonUI",
+			"Enabled": true
+		},
+		{
+			"Name": "GPULightmass",
+			"Enabled": true
+		},
+		{
+			"Name": "MultiUserClient",
+			"Enabled": true
 		}
 	]
 }
