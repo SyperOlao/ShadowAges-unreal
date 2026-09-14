@@ -234,6 +234,11 @@ class UQuest* UNarrativeComponent::BeginQuest(TSubclassOf<class UQuest> QuestCla
 	return nullptr;
 }
 
+bool UNarrativeComponent::RestartQuestFromID(TSubclassOf<class UQuest> QuestClass, FName StartFromID)
+{
+	return RestartQuest(QuestClass, StartFromID.IsNone() ? TArray<FName>() : TArray<FName>{StartFromID});
+}
+
 bool UNarrativeComponent::RestartQuest(TSubclassOf<class UQuest> QuestClass, TArray<FName> StartFromIDs)
 {
 	if (!IsValid(QuestClass))

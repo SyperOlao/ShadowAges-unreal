@@ -1,6 +1,8 @@
 Binaries/
 .vs/
 .vscode/
+Automation_*.sln
+*.slnx
 Build/
 Windows/
 

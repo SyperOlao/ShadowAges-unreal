@@ -474,6 +474,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Quests", meta = (AdvancedDisplay = "1"))
 	virtual bool RestartQuest(TSubclassOf<class UQuest> QuestClass, TArray<FName> StartFromIDs);
 
+	/** Compatibility entry point for events with one optional start state. None uses the quest's default start. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Quests", meta = (AdvancedDisplay = "1"))
+	bool RestartQuestFromID(TSubclassOf<class UQuest> QuestClass, FName StartFromID = NAME_None);
+
 	/**
 	Forget a given quest. The quest will be removed from the players quest list, 
 	and the quest can be started again later using BeginQuest() if desired.

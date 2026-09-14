@@ -111,12 +111,47 @@ Shadow Ages — это история **восхождения через гре
 
 ## 🛠️ Техническая информация
 
-- **Engine:** Unreal Engine 5
+- **Engine:** Unreal Engine 5.8.2
 - **Platform:** PC (первичная цель)
 - **Architecture:** компонентная, расширяемая
 - **AI:** state-based + паттерны поведения
 - **VFX:** Niagara
 - **Audio:** модульная система слоёв
+
+### Сборка после перехода на UE 5.8.2
+
+Unreal Engine 5.6.1 для открытия и сборки не требуется. В `ShadowAges.uproject`
+указана ассоциация `5.8`: номер исправления проверяется по установленному движку
+(`Engine/Build/Build.version`, ожидается 5.8.2).
+
+Используйте Visual Studio с компонентами из `.vsconfig`. Сгенерировать решение
+и собрать проект можно из PowerShell в корне репозитория:
+
+```powershell
+$engine = 'C:\Program Files\Epic Games\UE_5.8'
+$project = Join-Path $PWD 'ShadowAges.uproject'
+& "$engine\Engine\Build\BatchFiles\Build.bat" -projectfiles "-project=$project" -game -rocket
+& "$engine\Engine\Build\BatchFiles\Build.bat" ShadowAgesEditor Win64 Development "-Project=$project" -WaitMutex
+& "$engine\Engine\Build\BatchFiles\Build.bat" ShadowAges Win64 Development "-Project=$project" -WaitMutex
+```
+
+Встроенные исходники Narrative 3 и FMOD 2.03.11 адаптированы к API UE 5.8.
+Для FMOD нужны библиотеки версии **2.03.11** в `Plugins/FMODStudio/Binaries/Win64`:
+`fmod.dll`, `fmodL.dll`, `fmodstudio.dll`, `fmodstudioL.dll` и соответствующие
+`*_vc.lib`. Каталог `Binaries` исключён из Git, поэтому на новом компьютере
+эти файлы нужно восстановить из пакета FMOD. При переносе использован уже
+имевшийся архив `fmodstudio20311ue5.6win64.zip`: из него извлечены только
+библиотеки FMOD и аудиоплагинов, а модули `UnrealEditor-*` собраны заново на 5.8.2.
+Установка UE 5.6 для использования этого архива не нужна.
+
+Исправлены и пересохранены на 5.8.2 три ассета Narrative:
+`WBP_DefaultQuestNode`, `NE_CompleteNarrativeTask` и `NE_RestartQuest`.
+Для события перезапуска сохранён одиночный необязательный ID: метод
+`RestartQuestFromID` преобразует его в список состояний нового API,
+а `None` означает обычное начало квеста.
+
+Если локальный Zen не запускается, для проверки через командную строку можно
+добавить `-ddc=InstalledNoZenLocalFallback` — это штатный файловый кэш движка.
 
 ---
 

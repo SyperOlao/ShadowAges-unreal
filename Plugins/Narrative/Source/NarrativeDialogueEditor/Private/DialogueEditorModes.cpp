@@ -76,7 +76,7 @@ void FDialogueEditorApplicationMode::RegisterTabFactories(TSharedPtr<class FTabM
 	// Mode-specific setup
 	DialogueEditorPtr->PushTabFactories(DialogueEditorTabFactories);
 
-	FApplicationMode::RegisterTabFactories(InTabManager);
+	RegisterTabFactoriesWithAppAndManager(DialogueEditorPtr.Get(), InTabManager.ToSharedRef());
 }
 
 void FDialogueEditorApplicationMode::PreDeactivateMode()

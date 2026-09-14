@@ -120,7 +120,7 @@ void FQuestEditorApplicationMode::RegisterTabFactories(TSharedPtr<class FTabMana
 	// Mode-specific setup
 	QuestEditorPtr->PushTabFactories(QuestEditorTabFactories);
 
-	FApplicationMode::RegisterTabFactories(InTabManager);
+	RegisterTabFactoriesWithAppAndManager(QuestEditorPtr.Get(), InTabManager.ToSharedRef());
 }
 
 void FQuestEditorApplicationMode::PreDeactivateMode()

@@ -27,16 +27,16 @@ public:
 	UPROPERTY(EditAnywhere, config, Category = "Graph Style")
 	FLinearColor NPCNodeColor;
 
-	UPROPERTY(EditAnywhere, config, Category = "Graph Defaults", noclear, meta = (MetaClass="DialogueNode_NPC"))
+	UPROPERTY(EditAnywhere, config, Category = "Graph Defaults", noclear, meta = (MetaClass="/Script/Narrative.DialogueNode_NPC"))
 	FSoftClassPath DefaultNPCDialogueClass;
 
-	UPROPERTY(EditAnywhere, config, Category = "Graph Defaults", noclear, meta = (MetaClass = "DialogueNode_Player"))
+	UPROPERTY(EditAnywhere, config, Category = "Graph Defaults", noclear, meta = (MetaClass = "/Script/Narrative.DialogueNode_Player"))
 	FSoftClassPath DefaultPlayerDialogueClass;
 
-	UPROPERTY(EditAnywhere, config, Category = "Graph Defaults", noclear, meta = (MetaClass = "Dialogue"))
+	UPROPERTY(EditAnywhere, config, Category = "Graph Defaults", noclear, meta = (MetaClass = "/Script/Narrative.Dialogue"))
 	FSoftClassPath DefaultDialogueClass;
 
-	UPROPERTY(EditAnywhere, config, Category = "Graph Defaults", noclear, meta = (MetaClass = "DialogueNodeUserWidget"))
+	UPROPERTY(EditAnywhere, config, Category = "Graph Defaults", noclear, meta = (MetaClass = "/Script/NarrativeDialogueEditor.DialogueNodeUserWidget"))
 	TSoftClassPtr<class UDialogueNodeUserWidget> DefaultDialogueWidgetClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, config, Category = "Graph Options")
