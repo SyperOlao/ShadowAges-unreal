@@ -747,17 +747,6 @@ bool FQuestGraphEditor::Quest_CanPasteNodes() const
 {
 	//Pasting nodes is disabled for now
 	return false;
-
-	TSharedPtr<SGraphEditor> CurrentGraphEditor = UpdateGraphEdPtr.Pin();
-	if (!CurrentGraphEditor.IsValid())
-	{
-		return false;
-	}
-
-	FString ClipboardContent;
-	FPlatformApplicationMisc::ClipboardPaste(ClipboardContent);
-
-	return FEdGraphUtilities::CanImportNodesFromText(CurrentGraphEditor->GetCurrentGraph(), ClipboardContent);
 }
 
 void FQuestGraphEditor::Quest_DuplicateNodes()
@@ -824,96 +813,6 @@ void FQuestGraphEditor::QuickAddNode()
 {
 	//Disabled for now until we can find out why creating actions cause a nullptr crash
 	return;
-
-	TSharedPtr<SGraphEditor> CurrentGraphEditor = UpdateGraphEdPtr.Pin();
-	if (!CurrentGraphEditor.IsValid())
-	{
-		return;
-	}
-
-	const FScopedTransaction Transaction(FQuestEditorCommands::Get().QuickAddNode->GetDescription());
-	UQuestGraph* QuestGraph = Cast<UQuestGraph>(CurrentGraphEditor->GetCurrentGraph());
-
-	QuestGraph->Modify();
-
-	const FGraphPanelSelectionSet SelectedNodes = GetSelectedNodes();
-
-	if (SelectedNodes.Num() == 0)
-	{
-		return;
-	}
-
-	if (const UQuestGraphSchema* Schema = Cast<UQuestGraphSchema>(QuestGraph->GetSchema()))
-	{
-		for (auto& SelectedNode : SelectedNodes)
-		{
-			FQuestSchemaAction_NewNode AddNewNode;
-			UQuestGraphNode* Node;
-			//We we're quick adding from an action, add a new state after the action
-			if (UQuestGraphNode_Action* ActionNode = Cast<UQuestGraphNode_Action>(SelectedNode))
-			{
-				//Dont do anything if we're already linked somewhere
-				if (ActionNode->GetOutputPin()->LinkedTo.Num() == 0)
-				{
-					Node = NewObject<UQuestGraphNode_State>(QuestGraph, UQuestGraphNode_State::StaticClass());
-					AddNewNode.NodeTemplate = Node;
-
-					FVector2D NewStateLocation = FVector2D(ActionNode->NodePosX, ActionNode->NodePosY);
-
-					NewStateLocation.X += 300.f;
-
-					AddNewNode.PerformAction(QuestGraph, ActionNode->GetOutputPin(), NewStateLocation);
-
-
-					// Update UI
-					CurrentGraphEditor->NotifyGraphChanged();
-
-					UObject* GraphOwner = QuestGraph->GetOuter();
-					if (GraphOwner)
-					{
-						GraphOwner->PostEditChange();
-						GraphOwner->MarkPackageDirty();
-					}
-				}
-			}
-			else if (UQuestGraphNode_State* StateNode = Cast<UQuestGraphNode_State>(SelectedNode))
-			{
-				//Dont allow adding nodes from a failure or success node
-				if (!(StateNode->IsA<UQuestGraphNode_Failure>() || StateNode->IsA<UQuestGraphNode_Success>()))
-				{
-					//For some reason this line crashes the editor and so quick add is disabled for now.
-					Node = NewObject<UQuestGraphNode_Action>(QuestGraph, UQuestGraphNode_Action::StaticClass());
-					AddNewNode.NodeTemplate = Node;
-
-					FVector2D NewActionLocation = FVector2D(ActionNode->NodePosX, ActionNode->NodePosY);
-
-					NewActionLocation.X += 300.f;
-
-					//Make sure new node doesn't overlay any others
-					for (auto& LinkedTo : ActionNode->GetOutputPin()->LinkedTo)
-					{
-						if (LinkedTo->GetOwningNode()->NodePosY < NewActionLocation.Y)
-						{
-							NewActionLocation.Y = LinkedTo->GetOwningNode()->NodePosY - 200.f;
-						}
-					}
-
-					AddNewNode.PerformAction(QuestGraph, ActionNode->GetOutputPin(), NewActionLocation);
-
-
-					// Update UI
-					CurrentGraphEditor->NotifyGraphChanged();
-
-					UObject* GraphOwner = QuestGraph->GetOuter();
-					if (GraphOwner)
-					{
-						GraphOwner->PostEditChange();
-						GraphOwner->MarkPackageDirty();
-					}
-				}
-			}
-		}
-	}
 }
 
 bool FQuestGraphEditor::CanQuickAddNode() const

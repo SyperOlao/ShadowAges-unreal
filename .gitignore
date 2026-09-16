@@ -37,6 +37,13 @@ Windows/
 Plugins/DismembermentKitV2/
 Plugins/*/Intermediate/
 Plugins/*/Binaries/
+!Plugins/FMODStudio/Binaries/
+Plugins/FMODStudio/Binaries/*
+!Plugins/FMODStudio/Binaries/Win64/
+Plugins/FMODStudio/Binaries/Win64/*
+!Plugins/FMODStudio/Binaries/Win64/fmod*.dll
+!Plugins/FMODStudio/Binaries/Win64/fmod*_vc.lib
+!Plugins/FMODStudio/Binaries/Win64/resonanceaudio.dll
 
 Saved/
 DerivedDataCache/
