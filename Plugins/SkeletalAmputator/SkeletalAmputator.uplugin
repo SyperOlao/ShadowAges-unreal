@@ -1,0 +1,41 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "SkeletalAmputator",
+	"Description": "This is Plugin to Amputate SkeletalMesh in runtime.",
+	"Category": "Procedural Systems",
+	"CreatedBy": "SGSAmputationLab",
+	"CreatedByURL": "https://www.fab.com/sellers/SHINGEUNSU",
+	"DocsURL": "https://versed-saxophone-1a6.notion.site/Documentation-237c79e0bd0c802eb7bdd8dbe120c250?source=copy_link",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"EngineVersion": "5.8.0",
+	"CanContainContent": true,
+	"IsBetaVersion": true,
+	"Installed": true,
+	"Modules": [
+		{
+			"Name": "SkeletalAmputator",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "ProceduralMeshComponent",
+			"Enabled": true
+		},
+		{
+			"Name": "Niagara",
+			"Enabled": true
+		},
+		{
+			"Name": "GeometryProcessing",
+			"Enabled": true
+		}
+	]
+}
