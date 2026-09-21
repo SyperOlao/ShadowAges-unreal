@@ -2,7 +2,7 @@
 #include "CoreMinimal.h"
 #include "SAActionTypes.generated.h"
 
-USTRUCT(BluprintType)
+USTRUCT(BlueprintType)
 struct SHADOWAGES_API FSAActionHandle
 {
 	GENERATED_BODY()
