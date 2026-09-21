@@ -16,6 +16,7 @@ public:
 	bool Submit(FSAActionHandle Action, int32 Generation, double Now, float Lifetime);
 	bool TryReserve(FSAActionHandle Action, int32 Generation, double AcceptTime);
 	bool IsReserved(FSAActionHandle Action, int32 Generation);
+	bool Consume(FSAActionHandle Action, int32 Generation);
 	void Expire(double Now);
 	ESAComboBufferState GetState() const;
 private:
