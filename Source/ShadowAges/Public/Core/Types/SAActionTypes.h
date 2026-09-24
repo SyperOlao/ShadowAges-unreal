@@ -33,7 +33,7 @@ enum class ESAActionKind : uint8
 };
 
 UENUM(BlueprintType)
-enum class ESAActionType : uint8
+enum class ESAActionState : uint8
 {
 	Idle,
 	Reserved,
