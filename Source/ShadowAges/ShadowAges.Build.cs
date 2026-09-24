@@ -9,9 +9,9 @@ public class ShadowAges : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		PublicDependencyModuleNames.AddRange(new string[]
-			{ "Core", "CoreUObject", "Engine", "InputCore", "AIModule", "GameplayTasks" });
+			{ "Core", "CoreUObject", "Engine", "InputCore", "AIModule", "GameplayTasks", "GameplayTags", "SkeletalAmputator" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] { "PhysicsCore", "RenderCore", "RHI" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

@@ -1,4 +1,9 @@
-﻿#include "Combat/SACombatComponent.h"
+#include "Combat/SACombatComponent.h"
+#include "Anatomy/SAAnatomyComponent.h"
+#include "Magic/SASpellcastingComponent.h"
+#include "Magic/SAStatusEffectComponent.h"
+#include "Combat/SAMeleeDamageReceiverComponent.h"
+#include "GameFramework/Actor.h"
 #include "AlphaBlend.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -21,8 +26,7 @@ ESACombatRequestResult USACombatComponent::RequestMeleeInput()
 	if (State == ESAActionState::Executing)
 	{
 		return RequestComboInput(ActiveAction)
-			       ? ESACombatRequestResult::Buffered
-			       : ESACombatRequestResult::WindowClosed;
+			? ESACombatRequestResult::Buffered : ESACombatRequestResult::WindowClosed;
 	}
 	if (IsBusy() || bFinishing || bMutatingStep || bEndingPlay)
 	{
@@ -39,8 +43,8 @@ ESACombatRequestResult USACombatComponent::RequestMeleeInput()
 
 bool USACombatComponent::ConfigureCombat(USkeletalMeshComponent* Mesh, USAWeaponMoveset* NewMoveset)
 {
-	if (IsBusy() || bFinishing || bMutatingStep || bEndingPlay
-		|| !IsValid(Mesh) || Mesh->GetOwner() != GetOwner())
+	if ((IsBusy() && !(ActionKind == ESAActionKind::Equip && State == ESAActionState::Reserved)) || bFinishing || bMutatingStep || bEndingPlay
+		|| (NewMoveset && !IsValid(Mesh)) || (Mesh && Mesh->GetOwner() != GetOwner()))
 	{
 		return false;
 	}
@@ -51,7 +55,7 @@ bool USACombatComponent::ConfigureCombat(USkeletalMeshComponent* Mesh, USAWeapon
 			RemoveTickPrerequisiteComponent(CombatMesh);
 		}
 		CombatMesh = Mesh;
-		AddTickPrerequisiteComponent(CombatMesh);
+		if (CombatMesh) AddTickPrerequisiteComponent(CombatMesh);
 	}
 	Moveset = NewMoveset;
 	return true;
@@ -61,16 +65,24 @@ bool USACombatComponent::RequestCancel(ESACombatCancelIntent Intent)
 {
 	if (bFinishing || bMutatingStep || bEndingPlay) return false;
 	if (!IsBusy()) return EnsureDependencies() && Vitals->IsAlive();
+    if (ActionKind == ESAActionKind::Cast && State == ESAActionState::Executing)
+    {
+        const bool bAllowed = (Intent == ESACombatCancelIntent::Dodge && CastPolicy.bAllowDodge)
+            || (Intent == ESACombatCancelIntent::Equip && CastPolicy.bAllowEquip);
+        if (!bAllowed) { return false; }
+        CancelActionIfCurrent(ActiveAction, ESAActionEndReason::Cancelled);
+        return !IsBusy() && IsValid(Vitals) && Vitals->IsAlive() && !bEndingPlay;
+    }
 	if (State != ESAActionState::Executing || !ActiveKey.IsValid()) return false;
 	const FSAAttackCancelPolicy Policy = ActiveStep.CancelPolicy;
 	FSAMeleeTimeWindow Window;
 	bool bAllowed = false;
 	switch (Intent)
 	{
-	case ESACombatCancelIntent::Dodge: bAllowed = Policy.bAllowDodge; Window = Policy.DodgeWindow; break;
-	case ESACombatCancelIntent::Block: bAllowed = Policy.bAllowBlock; Window = Policy.BlockWindow; break;
-	case ESACombatCancelIntent::Equip: bAllowed = Policy.bAllowEquip; Window = Policy.EquipWindow; break;
-	default: return false;
+		case ESACombatCancelIntent::Dodge: bAllowed = Policy.bAllowDodge; Window = Policy.DodgeWindow; break;
+		case ESACombatCancelIntent::Block: bAllowed = Policy.bAllowBlock; Window = Policy.BlockWindow; break;
+		case ESACombatCancelIntent::Equip: bAllowed = Policy.bAllowEquip; Window = Policy.EquipWindow; break;
+		default: return false;
 	}
 	UAnimInstance* Anim = OwnedAnim.Get();
 	FAnimMontageInstance* Instance = Anim ? Anim->GetMontageInstanceForID(ActiveKey.MontageInstanceID) : nullptr;
@@ -105,21 +117,24 @@ USAWeaponMoveset* USACombatComponent::GetMoveset() const
 
 FVector USACombatComponent::FilterMoveInput(FVector Input) const
 {
+    if (ActionKind == ESAActionKind::Cast && State == ESAActionState::Executing)
+    { return Input * CastPolicy.Movement.MoveInputScale; }
 	return ActiveKey.IsValid() ? Input * ActiveStep.Movement.MoveInputScale : Input;
 }
 
 bool USACombatComponent::CanApplyLookInput() const
 {
-	
+    if (ActionKind == ESAActionKind::Cast && State == ESAActionState::Executing)
+    { return CastPolicy.Movement.bAllowLookInput; }
 	return !ActiveKey.IsValid() || ActiveStep.Movement.bAllowLookInput;
 }
 
 FString USACombatComponent::GetDebugString() const
 {
 	return FString::Printf(TEXT("State=%d Action=%s Step=%d Gen=%d Instance=%d Buffer=%d Pos=%.3f Error=%s"),
-	static_cast<int32>(State), *ActiveAction.Id.ToString(), ActiveKey.StepIndex,
-	ActiveKey.Generation, ActiveKey.MontageInstanceID, static_cast<int32>(Combo.GetState()),
-	PreviousPosition, *LastError);
+		static_cast<int32>(State), *ActiveAction.Id.ToString(), ActiveKey.StepIndex,
+		ActiveKey.Generation, ActiveKey.MontageInstanceID, static_cast<int32>(Combo.GetState()),
+		PreviousPosition, *LastError);
 }
 
 
@@ -130,16 +145,21 @@ FSAActionHandle USACombatComponent::ReserveAction(ESAActionKind Kind)
 		LastError = TEXT("Combat is busy.");
 		return {};
 	}
-	if (Kind != ESAActionKind::Melee)
+	if (Kind != ESAActionKind::Melee && Kind != ESAActionKind::Cast && Kind != ESAActionKind::Equip && Kind != ESAActionKind::Consumable)
 	{
-		LastError = TEXT("This chapter implements only Melee.");
+		LastError = TEXT("Unsupported action executor.");
 		return {};
 	}
-	if (!EnsureDependencies() || !Vitals->IsAlive())
+	if (!EnsureDependencies(Kind == ESAActionKind::Melee) || !Vitals->IsAlive())
 	{
 		return {};
 	}
 	ActiveAction.Id = FGuid::NewGuid();
+    if (const auto* Effects = GetOwner()->FindComponentByClass<USAStatusEffectComponent>())
+    {
+        if ((Kind == ESAActionKind::Cast && Effects->IsSilenced()) || (Kind == ESAActionKind::Melee && Effects->IsDisarmed()))
+        { ActiveAction = {}; LastError = TEXT("Action restricted by status effects."); return {}; }
+    }
 	LastError.Reset();
 	State = ESAActionState::Reserved;
 	ActionKind = Kind;
@@ -151,18 +171,22 @@ FSAActionHandle USACombatComponent::ReserveAction(ESAActionKind Kind)
 bool USACombatComponent::BeginReservedAction(FSAActionHandle Handle)
 {
 	if (!IsCurrentAction(Handle) || State != ESAActionState::Reserved
-		|| ActionKind != ESAActionKind::Melee || !ActiveMoveset
+        || (ActionKind == ESAActionKind::Melee && !ActiveMoveset)
+        || (ActionKind == ESAActionKind::Cast && !CastExecutor.IsValid())
 		|| !IsValid(Vitals) || !Vitals->IsAlive())
 	{
 		return false;
 	}
 	State = ESAActionState::Executing;
+    if (ActionKind == ESAActionKind::Equip || ActionKind == ESAActionKind::Consumable)
+        ActionDeadline = GetWorld()->GetTimeSeconds() + 32.0;
+    if (auto* Effects = GetOwner()->FindComponentByClass<USAStatusEffectComponent>()) { Effects->RefreshMovement(); }
 	return true;
 }
 
 ESACombatRequestResult USACombatComponent::TryStartMelee(FSAActionHandle Handle, const FSAMeleeRequest& Request)
 {
-	if (!IsCurrentAction(Handle) || State != ESAActionState::Reserved)
+	if (!IsReservedAction(Handle, ESAActionKind::Melee))
 	{
 		return ESACombatRequestResult::InvalidHandle;
 	}
@@ -182,8 +206,7 @@ ESACombatRequestResult USACombatComponent::TryStartMelee(FSAActionHandle Handle,
 		return ESACombatRequestResult::InvalidData;
 	}
 	const int32 Entry = Request.EntryStepOverride == INDEX_NONE
-		                    ? Request.Moveset->EntryStepIndex
-		                    : Request.EntryStepOverride;
+		? Request.Moveset->EntryStepIndex : Request.EntryStepOverride;
 	if (!Request.Moveset->Steps.IsValidIndex(Entry))
 	{
 		LastError = TEXT("EntryStepOverride is outside Steps.");
@@ -223,6 +246,7 @@ bool USACombatComponent::FinishActionIfCurrent(FSAActionHandle Handle, ESAAction
 	const FSAMeleePlaybackKey FinishedKey = ActiveKey;
 	const TWeakObjectPtr<UAnimInstance> FinishedAnim = OwnedAnim;
 	const FGuid Reservation = PendingStaminaReservation;
+    const TWeakObjectPtr<USASpellcastingComponent> FinishedCaster = CastExecutor;
 	{
 		TGuardValue<bool> Guard(bFinishing, true);
 		ActiveAction = {};
@@ -231,10 +255,14 @@ bool USACombatComponent::FinishActionIfCurrent(FSAActionHandle Handle, ESAAction
 		ActiveMoveset = nullptr;
 		ActiveStep = {};
 		OwnedAnim.Reset();
+        CastExecutor.Reset();
+        CastPolicy = {};
+        if (auto* Effects = GetOwner()->FindComponentByClass<USAStatusEffectComponent>()) { Effects->RefreshMovement(); }
 		Combo.Reset();
 		PendingStaminaReservation.Invalidate();
 		SetComponentTickEnabled(false);
 		if (IsValid(Vitals)) Vitals->ReleaseStamina(Reservation);
+        if (FinishedCaster.IsValid()) { FinishedCaster->CancelExecutor(Handle, Reason); }
 		if (FinishedKey.IsValid()) OnMeleeStepClosed.Broadcast(FinishedKey);
 		StopPlayback(FinishedAnim, FinishedKey.MontageInstanceID, StopBlendOutSeconds);
 		FTerminalEvent Event;
@@ -257,15 +285,39 @@ bool USACombatComponent::IsCurrentAction(FSAActionHandle Handle) const
 	return Handle.IsValid() && State != ESAActionState::Idle && Handle == ActiveAction;
 }
 
+bool USACombatComponent::IsReservedAction(FSAActionHandle Handle, ESAActionKind Kind) const
+{ return IsCurrentAction(Handle) && State == ESAActionState::Reserved && ActionKind == Kind; }
+
+float USACombatComponent::GetCastMovementScale() const
+{ return ActionKind == ESAActionKind::Cast && State == ESAActionState::Executing ? CastPolicy.Movement.MoveInputScale : 1.f; }
+
+bool USACombatComponent::ConfigureCastAction(FSAActionHandle Handle, USASpellcastingComponent* Executor,
+    float Duration, const FSACastPhasePolicy& Policy)
+{
+    if (!IsReservedAction(Handle, ESAActionKind::Cast) || !IsValid(Executor) || Executor->GetOwner() != GetOwner()
+        || !FMath::IsFinite(Duration) || Duration < 0.f || CastExecutor.IsValid()) { return false; }
+    CastExecutor = Executor;
+    CastPolicy = Policy;
+    ActionDeadline = GetWorld()->GetTimeSeconds() + Duration + TimeoutGraceSeconds;
+    return true;
+}
+
+bool USACombatComponent::SetCastPhasePolicy(FSAActionHandle Handle, const FSACastPhasePolicy& Policy)
+{
+    if (!IsCurrentAction(Handle) || ActionKind != ESAActionKind::Cast) { return false; }
+    CastPolicy = Policy;
+    if (auto* Effects = GetOwner()->FindComponentByClass<USAStatusEffectComponent>()) { Effects->RefreshMovement(); }
+    return true;
+}
+
 bool USACombatComponent::IsCurrentPlayback(FSAMeleePlaybackKey Key) const
 {
 	return Key.IsValid() && State == ESAActionState::Executing
-	&& IsCurrentAction(Key.Action) && ActiveKey == Key;
+		&& IsCurrentAction(Key.Action) && ActiveKey == Key;
 }
 
 double USACombatComponent::GetActionDeadline(FSAActionHandle Handle) const
 {
-	
 	if (!IsCurrentAction(Handle)) return 0.0;
 	return State == ESAActionState::Reserved ? ReservationDeadline : ActionDeadline;
 }
@@ -298,14 +350,11 @@ void USACombatComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	ReservationTimeoutSeconds = FMath::IsFinite(ReservationTimeoutSeconds)
-		                            ? FMath::Max(0.01f, ReservationTimeoutSeconds)
-		                            : 1.0f;
+		? FMath::Max(0.01f, ReservationTimeoutSeconds) : 1.0f;
 	TimeoutGraceSeconds = FMath::IsFinite(TimeoutGraceSeconds)
-		                      ? FMath::Max(0.1f, TimeoutGraceSeconds)
-		                      : 2.0f;
+		? FMath::Max(0.1f, TimeoutGraceSeconds) : 2.0f;
 	StopBlendOutSeconds = FMath::IsFinite(StopBlendOutSeconds)
-		                      ? FMath::Max(0.0f, StopBlendOutSeconds)
-		                      : 0.1f;
+		? FMath::Max(0.0f, StopBlendOutSeconds) : 0.1f;
 	if (!CombatMesh)
 	{
 		if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
@@ -338,7 +387,7 @@ void USACombatComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 }
 
 void USACombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
-                                       FActorComponentTickFunction* ThisTickFunction)
+	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	FlushTerminalEvents();
@@ -359,6 +408,16 @@ void USACombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		if (Now >= ReservationDeadline) FinishActionIfCurrent(Handle, ESAActionEndReason::TimeOut);
 		return;
 	}
+    if (ActionKind == ESAActionKind::Equip || ActionKind == ESAActionKind::Consumable)
+    {
+        if (Now > ActionDeadline) FinishActionIfCurrent(Handle, ESAActionEndReason::TimeOut);
+        return;
+    }
+    if (ActionKind == ESAActionKind::Cast)
+    {
+        if (!CastExecutor.IsValid() || Now > ActionDeadline) { FinishActionIfCurrent(Handle, ESAActionEndReason::TimeOut); }
+        return;
+    }
 	UAnimInstance* Anim = OwnedAnim.Get();
 	if (!IsValid(CombatMesh) || !Anim || CombatMesh->GetAnimInstance() != Anim)
 	{
@@ -389,7 +448,7 @@ void USACombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	}
 }
 
-bool USACombatComponent::EnsureDependencies()
+bool USACombatComponent::EnsureDependencies(bool bRequireMelee)
 {
 	AActor* Owner = GetOwner();
 	if (!Owner || bEndingPlay || !GetWorld() || !HasBegunPlay())
@@ -411,8 +470,8 @@ bool USACombatComponent::EnsureDependencies()
 	TArray<USAVitalsComponent*> Found;
 	Owner->GetComponents<USAVitalsComponent>(Found);
 	if (Found.Num() != 1 || !IsValid(Found[0]) || !Found[0]->HasBegunPlay()
-		|| !IsValid(CombatMesh) || CombatMesh->GetOwner() != Owner
-		|| !IsValid(CombatMesh->GetAnimInstance()))
+        || (bRequireMelee && (!IsValid(CombatMesh) || CombatMesh->GetOwner() != Owner
+            || !IsValid(CombatMesh->GetAnimInstance()))))
 	{
 		LastError = TEXT("Need one initialized Vitals and an owned skeletal mesh with AnimInstance.");
 		return false;
@@ -444,6 +503,12 @@ bool USACombatComponent::ValidateForMesh(const USAWeaponMoveset* Candidate, FStr
 	}
 	for (const FSAMeleeStep& Step : Candidate->Steps)
 	{
+		if (Step.HitWindows.Num() > 32)
+		{
+			Error = FString::Printf(TEXT("Step %s exceeds the limit of 32 hit windows."),
+				*Step.StepId.ToString());
+			return false;
+		}
 		if (Step.Montage->GetSkeleton() != SkeletalMesh->GetSkeleton())
 		{
 			Error = FString::Printf(TEXT("Step %s uses another skeleton."), *Step.StepId.ToString());
@@ -458,7 +523,7 @@ ESACombatRequestResult USACombatComponent::StartStep(FSAActionHandle Handle, int
 	if (bMutatingStep) return ESACombatRequestResult::Busy;
 	ESACombatRequestResult Result;
 	{
-		TGuardValue Guard(bMutatingStep, true);
+		TGuardValue<bool> Guard(bMutatingStep, true);
 		Result = StartStepInternal(Handle, NewStepIndex);
 	}
 	FlushTerminalEvents();
@@ -479,6 +544,15 @@ ESACombatRequestResult USACombatComponent::StartStepInternal(FSAActionHandle Han
 		return ESACombatRequestResult::Failed;
 	}
 	const FSAMeleeStep NewStep = ActiveMoveset->Steps[NewStepIndex];
+	if (!NewStep.RequiredBodyTags.IsEmpty())
+	{
+		const USAAnatomyComponent* Anatomy = GetOwner()->FindComponentByClass<USAAnatomyComponent>();
+		if (!Anatomy || !Anatomy->HasFunctionalBodyTags(NewStep.RequiredBodyTags))
+		{
+			LastError = TEXT("Attack requires unavailable functional body tags.");
+			return ESACombatRequestResult::Failed;
+		}
+	}
 	const int32 NewGeneration = ++GenerationCounter;
 	FGuid Reservation;
 	if (!Vitals->TryReserveStamina(Handle, NewGeneration, NewStep.StaminaCost, Reservation))
@@ -516,7 +590,7 @@ ESACombatRequestResult USACombatComponent::StartStepInternal(FSAActionHandle Han
 	PreviousWorldTime = GetWorld()->GetTimeSeconds();
 
 	const float PlayedLength = Anim->Montage_Play(NewStep.Montage, NewStep.PlayRate,
-	                                              EMontagePlayReturnType::MontageLength, 0.0f, false);
+		EMontagePlayReturnType::MontageLength, 0.0f, false);
 	FAnimMontageInstance* Instance = Anim->GetActiveInstanceForMontage(NewStep.Montage);
 	const int32 NewInstanceID = Instance ? Instance->GetInstanceID() : INDEX_NONE;
 	if (!IsCurrentAction(Handle) || ActiveKey.Generation != NewGeneration)
@@ -552,8 +626,7 @@ ESACombatRequestResult USACombatComponent::StartStepInternal(FSAActionHandle Han
 	if (!IsCurrentPlayback(StartedKey)) return ESACombatRequestResult::Failed;
 	OnMeleeStepStartedBP.Broadcast(StartedKey);
 	return IsCurrentPlayback(StartedKey)
-		       ? ESACombatRequestResult::Started
-		       : ESACombatRequestResult::Failed;
+		? ESACombatRequestResult::Started : ESACombatRequestResult::Failed;
 }
 
 void USACombatComponent::AdvanceTimeline(float Position, double Now)
@@ -568,6 +641,8 @@ void USACombatComponent::AdvanceTimeline(float Position, double Now)
 	Frame.Mesh = CombatMesh.Get();
 	Frame.PreviousPosition = Previous;
 	Frame.CurrentPosition = Position;
+	Frame.PreviousWorldTime = PreviousTime;
+	Frame.CurrentWorldTime = Now;
 	Frame.bFirstSample = bFirstPoseSample;
 	for (int32 Index = 0; Index < Step.HitWindows.Num(); ++Index)
 	{
@@ -586,7 +661,10 @@ void USACombatComponent::AdvanceTimeline(float Position, double Now)
 	PreviousPosition = Position;
 	PreviousWorldTime = Now;
 	bFirstPoseSample = false;
-	OnMeleePoseAdvanced.Broadcast(Frame);
+	{
+		TGuardValue<const FSAMeleePoseFrame*> Guard(ContactFrame, &Frame);
+		OnMeleePoseAdvanced.Broadcast(Frame);
+	}
 	if (!IsCurrentPlayback(Key)) return;
 
 	if (Step.NextStepIndex != INDEX_NONE && !bBranchClosed)
@@ -594,8 +672,7 @@ void USACombatComponent::AdvanceTimeline(float Position, double Now)
 		if (Previous <= Step.ComboAccept.BeginSeconds && Position >= Step.ComboAccept.BeginSeconds)
 		{
 			const double Alpha = Position > Previous
-				                     ? (Step.ComboAccept.BeginSeconds - Previous) / (Position - Previous)
-				                     : 1.0;
+				? (Step.ComboAccept.BeginSeconds - Previous) / (Position - Previous) : 1.0;
 			const double BoundaryTime = PreviousTime + FMath::Clamp(Alpha, 0.0, 1.0) * (Now - PreviousTime);
 			Combo.TryReserve(Key.Action, Key.Generation, BoundaryTime);
 		}
@@ -609,7 +686,7 @@ void USACombatComponent::AdvanceTimeline(float Position, double Now)
 		if (bReachedAccept)
 		{
 			bAcceptNotified = true;
-			TGuardValue AcceptGuard(AcceptDispatchKey, Key);
+			TGuardValue<FSAMeleePlaybackKey> AcceptGuard(AcceptDispatchKey, Key);
 			OnComboAcceptOpened.Broadcast(Key);
 			if (!IsCurrentPlayback(Key)) return;
 			OnComboAcceptOpenedBP.Broadcast(Key);
@@ -619,6 +696,7 @@ void USACombatComponent::AdvanceTimeline(float Position, double Now)
 			&& Previous < Step.ComboBranch.EndSeconds;
 		if (bPassedBranch && Combo.Consume(Key.Action, Key.Generation))
 		{
+			// Pose event above may already have cancelled us; Key was rechecked.
 			const ESACombatRequestResult Result = StartStep(Key.Action, Step.NextStepIndex);
 			if (Result == ESACombatRequestResult::Started || !IsCurrentPlayback(Key)) return;
 			if (Result != ESACombatRequestResult::InsufficientStamina)
@@ -645,8 +723,7 @@ void USACombatComponent::StopPlayback(TWeakObjectPtr<UAnimInstance> Anim, int32 
 {
 	UAnimInstance* InstanceOwner = Anim.Get();
 	FAnimMontageInstance* Instance = InstanceOwner && InstanceID != INDEX_NONE
-		                                 ? InstanceOwner->GetMontageInstanceForID(InstanceID)
-		                                 : nullptr;
+		? InstanceOwner->GetMontageInstanceForID(InstanceID) : nullptr;
 	if (!Instance) return;
 	Instance->OnMontageEnded.Unbind();
 	Instance->OnMontageBlendingOutStarted.Unbind();
@@ -680,12 +757,136 @@ void USACombatComponent::HandleMontageEnded(UAnimMontage* Montage, bool bInterru
 {
 	if (!IsCurrentPlayback(Expected) || Montage != ActiveStep.Montage) return;
 	FinishActionIfCurrent(Expected.Action,
-	                      bInterrupted ? ESAActionEndReason::Interrupted : ESAActionEndReason::Failed);
+		bInterrupted ? ESAActionEndReason::Interrupted : ESAActionEndReason::Failed);
 }
 
-void USACombatComponent::HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted,
-	FSAMeleePlaybackKey Expected)
+void USACombatComponent::HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted, FSAMeleePlaybackKey Expected)
 {
 	if (!IsCurrentPlayback(Expected) || Montage != ActiveStep.Montage) return;
 	FinishActionIfCurrent(Expected.Action, ESAActionEndReason::Interrupted);
+}
+
+bool USACombatComponent::IsContactWindowOpen(FSAMeleePlaybackKey Key, int32 WindowSerial) const
+{
+	if (!ContactFrame || !(ContactFrame->Key == Key) || !IsCurrentPlayback(Key)
+		|| !ActiveStep.HitWindows.IsValidIndex(WindowSerial))
+	{
+		return false;
+	}
+
+	for (const FSAMeleeWindowSlice& Slice : ContactFrame->HitSlices)
+	{
+		if (Slice.WindowSerial == WindowSerial)
+		{
+			return true;
+		}
+	}
+
+	const FSAMeleeHitWindow& Window = ActiveStep.HitWindows[WindowSerial];
+	return Window.BeginSeconds <= ContactFrame->CurrentPosition
+		&& ContactFrame->CurrentPosition < Window.EndSeconds;
+}
+
+bool USACombatComponent::CanAttemptMeleeContact(AActor* Target) const
+{
+	const AActor* Source = GetOwner();
+	if (bEndingPlay || bFinishing || bMutatingStep || bDispatchingMeleeContact
+		|| !ContactFrame || !(ContactFrame->Key == ActiveKey)
+		|| !IsCurrentPlayback(ActiveKey) || !IsValid(Source) || !IsValid(Target)
+		|| Target == Source || !IsValid(Vitals) || !Vitals->IsAlive()
+		|| !IsValid(CombatMesh))
+	{
+		return false;
+	}
+
+	UAnimInstance* Anim = OwnedAnim.Get();
+	FAnimMontageInstance* Instance = Anim && CombatMesh->GetAnimInstance() == Anim
+		? Anim->GetMontageInstanceForID(ActiveKey.MontageInstanceID) : nullptr;
+	if (!Instance || Instance->IsStopped())
+	{
+		return false;
+	}
+
+	TArray<USAMeleeDamageReceiverComponent*> Receivers;
+	Target->GetComponents<USAMeleeDamageReceiverComponent>(Receivers);
+	return Receivers.Num() == 1 && IsValid(Receivers[0])
+		&& Receivers[0]->CanReceiveFrom(Source);
+}
+
+FSADamageResult USACombatComponent::ResolveMeleeContact(const FSAMeleeHitRequest& Request)
+{
+	FSADamageResult Result;
+	const FSAMeleePlaybackKey Key = Request.Context.Playback;
+	AActor* Target = Request.Context.TargetActor.Get();
+	if (!IsCurrentPlayback(Key) || Request.Context.SourceActor.Get() != GetOwner()
+		|| !IsContactWindowOpen(Key, Request.Context.WindowSerial)
+		|| Target != Request.Context.Hit.GetActor()
+		|| !FMath::IsFinite(Request.Context.FrameAlpha)
+		|| Request.Context.FrameAlpha < 0.0 || Request.Context.FrameAlpha > 1.0
+		|| !CanAttemptMeleeContact(Target))
+	{
+		return Result;
+	}
+
+	// Snapshot before any callback: observers cannot replace its damage or identity.
+	FSAMeleeHitRequest AuthoritativeRequest = Request;
+	AuthoritativeRequest.ProposedDamage = ActiveStep.Damage;
+	AuthoritativeRequest.ProposedPoiseDamage = ActiveStep.PoiseDamage;
+	USAMeleeDamageReceiverComponent* Receiver =
+		Target->FindComponentByClass<USAMeleeDamageReceiverComponent>();
+	if (!IsValid(Receiver))
+	{
+		return Result;
+	}
+
+	TGuardValue<bool> Guard(bDispatchingMeleeContact, true);
+	Result = Receiver->ResolveMeleeHit(AuthoritativeRequest);
+	if (!Result.bAccepted || !IsCurrentPlayback(Key))
+	{
+		return Result;
+	}
+
+	OnMeleeContactResolved.Broadcast(AuthoritativeRequest.Context, Result);
+	if (!IsCurrentPlayback(Key))
+	{
+		return Result;
+	}
+	OnMeleeContactResolvedBP.Broadcast(AuthoritativeRequest.Context, Result);
+	return Result;
+}
+
+bool USACombatComponent::NotifyMeleeWorldContact(const FSAHitContext& Context)
+{
+	const FSAMeleePlaybackKey Key = Context.Playback;
+	const AActor* Source = GetOwner();
+	if (bEndingPlay || bFinishing || bMutatingStep || bDispatchingMeleeContact
+		|| !IsValid(Source) || !IsValid(Vitals) || !Vitals->IsAlive()
+		|| !IsCurrentPlayback(Key) || Context.SourceActor.Get() != Source
+		|| !IsContactWindowOpen(Key, Context.WindowSerial)
+		|| Context.TargetActor.Get() != Context.Hit.GetActor()
+		|| Context.TargetActor.Get() == Source
+		|| !FMath::IsFinite(Context.FrameAlpha)
+		|| Context.FrameAlpha < 0.0 || Context.FrameAlpha > 1.0
+		|| !IsValid(CombatMesh))
+	{
+		return false;
+	}
+
+	UAnimInstance* Anim = OwnedAnim.Get();
+	FAnimMontageInstance* Instance = Anim && CombatMesh->GetAnimInstance() == Anim
+		? Anim->GetMontageInstanceForID(Key.MontageInstanceID) : nullptr;
+	if (!Instance || Instance->IsStopped())
+	{
+		return false;
+	}
+
+	const FSAHitContext Snapshot = Context;
+	TGuardValue<bool> Guard(bDispatchingMeleeContact, true);
+	OnMeleeWorldContact.Broadcast(Snapshot);
+	if (!IsCurrentPlayback(Key))
+	{
+		return true;
+	}
+	OnMeleeWorldContactBP.Broadcast(Snapshot);
+	return true;
 }

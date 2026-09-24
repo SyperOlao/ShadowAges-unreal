@@ -1,25 +1,32 @@
-﻿#pragma once
+// Source/ShadowAges/Public/Combat/SACombatComponent.h
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Core/Types/SAActionTypes.h"
+#include "Core/Types/SACombatTypes.h"
 #include "Combat/SAComboBuffer.h"
 #include "Combat/SAMeleeRequest.h"
+#include "Magic/SAMagicTypes.h"
 #include "SACombatComponent.generated.h"
 
+class AActor;
 class UAnimInstance;
 class UAnimMontage;
 class USkeletalMeshComponent;
 class USAVitalsComponent;
+class USASpellcastingComponent;
 
 UCLASS(ClassGroup = (ShadowAges), meta = (BlueprintSpawnableComponent))
 class SHADOWAGES_API USACombatComponent : public UActorComponent
 {
-	GENERATED_BODY()
-public:
-	USACombatComponent();
+    GENERATED_BODY()
 
-	 UFUNCTION(BlueprintCallable, Category = "Combat")
+public:
+    USACombatComponent();
+
+    // Player-facing command: one press starts or buffers one continuation.
+    UFUNCTION(BlueprintCallable, Category = "Combat")
     ESACombatRequestResult RequestMeleeInput();
 
     UFUNCTION(BlueprintCallable, Category = "Combat")
@@ -58,13 +65,26 @@ public:
     bool IsCurrentAction(FSAActionHandle Handle) const;
     bool IsCurrentPlayback(FSAMeleePlaybackKey Key) const;
     double GetActionDeadline(FSAActionHandle Handle) const;
+    ESAActionKind GetCurrentActionKind() const { return ActionKind; }
+    float GetCastMovementScale() const;
+    bool IsReservedAction(FSAActionHandle Handle, ESAActionKind Kind) const;
+    bool ConfigureCastAction(FSAActionHandle Handle, USASpellcastingComponent* Executor,
+        float Duration, const FSACastPhasePolicy& Policy);
+    bool SetCastPhasePolicy(FSAActionHandle Handle, const FSACastPhasePolicy& Policy);
     bool RequestComboInput(FSAActionHandle Handle);
+
+    // Contacts come from a native detector; this component owns attack damage.
+    bool CanAttemptMeleeContact(AActor* Target) const;
+    FSADamageResult ResolveMeleeContact(const FSAMeleeHitRequest& Request);
+    bool NotifyMeleeWorldContact(const FSAHitContext& Context);
 
     FSAOnActionFinished OnActionFinished;
     FSAOnMeleeStepEvent OnMeleeStepStarted;
     FSAOnMeleeStepEvent OnMeleeStepClosed;
     FSAOnComboAcceptOpened OnComboAcceptOpened;
     FSAOnMeleePoseAdvanced OnMeleePoseAdvanced;
+    FSAOnMeleeContactResolved OnMeleeContactResolved;
+    FSAOnMeleeWorldContact OnMeleeWorldContact;
 
     UPROPERTY(BlueprintAssignable, Category = "Combat")
     FSAOnActionFinishedBP OnActionFinishedBP;
@@ -75,6 +95,12 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Combat")
     FSAOnMeleeStepEventBP OnComboAcceptOpenedBP;
 
+    UPROPERTY(BlueprintAssignable, Category = "Combat|Contact")
+    FSAOnMeleeContactResolvedBP OnMeleeContactResolvedBP;
+
+    UPROPERTY(BlueprintAssignable, Category = "Combat|Contact")
+    FSAOnMeleeWorldContactBP OnMeleeWorldContactBP;
+
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -82,8 +108,9 @@ protected:
         FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
-    bool EnsureDependencies();
+    bool EnsureDependencies(bool bRequireMelee = true);
     bool ValidateForMesh(const USAWeaponMoveset* Candidate, FString& Error) const;
+    bool IsContactWindowOpen(FSAMeleePlaybackKey Key, int32 WindowSerial) const;
     ESACombatRequestResult StartStep(FSAActionHandle Handle, int32 NewStepIndex);
     ESACombatRequestResult StartStepInternal(FSAActionHandle Handle, int32 NewStepIndex);
     void AdvanceTimeline(float Position, double Now);
@@ -118,6 +145,9 @@ private:
     FSAMeleeStep ActiveStep;
 
     TWeakObjectPtr<UAnimInstance> OwnedAnim;
+    TWeakObjectPtr<USASpellcastingComponent> CastExecutor;
+    FSACastPhasePolicy CastPolicy;
+    const FSAMeleePoseFrame* ContactFrame = nullptr;
     FDelegateHandle DeathSubscription;
     FSAActionHandle ActiveAction;
     FSAMeleePlaybackKey ActiveKey;
@@ -139,6 +169,7 @@ private:
     bool bMutatingStep = false;
     bool bDispatchingTerminalEvents = false;
     bool bEndingPlay = false;
+    bool bDispatchingMeleeContact = false;
     FString LastError;
 
     struct FTerminalEvent

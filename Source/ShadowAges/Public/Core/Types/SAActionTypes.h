@@ -29,7 +29,8 @@ enum class ESAActionKind : uint8
 	Melee,
 	Cast,
 	Equip,
-	Reaction
+	Reaction,
+	Consumable
 };
 
 UENUM(BlueprintType)

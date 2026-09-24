@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "CoreMinimal.h"
 #include "Core/Types/SAActionTypes.h"
 #include "SAMeleeTypes.generated.h"
@@ -120,6 +120,12 @@ struct SHADOWAGES_API FSAMeleeStep
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hit", meta = (ClampMin = "0.0"))
 	float Damage = 25.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Hit")
+    FName DamageType = NAME_None;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Anatomy")
+    TArray<FName> RequiredBodyTags;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hit", meta = (ClampMin = "0.0"))
 	float PoiseDamage = 15.0f;
 
@@ -150,6 +156,8 @@ struct SHADOWAGES_API FSAMeleePoseFrame
 	TWeakObjectPtr<USkeletalMeshComponent> Mesh;
 	float PreviousPosition = 0.0f;
 	float CurrentPosition = 0.0f;
+	double PreviousWorldTime = 0.0;
+	double CurrentWorldTime = 0.0;
 	bool bFirstSample = false;
 	TArray<FSAMeleeWindowSlice> HitSlices;
 };
